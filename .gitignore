@@ -1,0 +1,33 @@
+.DS_Store
+
+# Local agent/editor state
+.claude/
+
+# Environment files
+.env
+.env.*
+!.env.example
+*.env
+*.local
+
+# Private keys and wallet material
+*.key
+*.pem
+*.p12
+*.pfx
+keystore/
+wallets/
+secrets/
+
+# Dependencies
+node_modules/
+/lib/
+
+# Build artifacts
+cache/
+out/
+broadcast/
+
+# Local workflow outputs
+generated/
+config/beneficiaries.json
