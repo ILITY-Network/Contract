@@ -5,14 +5,12 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { Contract, JsonRpcProvider, getAddress } from 'ethers';
+import { Contract, ContractFactory, JsonRpcProvider, getAddress } from 'ethers';
 import {
   buildLockupPlanFromMergedCsv,
 } from '../scripts/lib/lockup-merge.mjs';
-import {
-  DEFAULT_TOKEN_ADDRESS,
-} from '../scripts/lib/lockup-plan.mjs';
-import { impersonateAccount, startAnvilFork, stopAnvilFork } from '../scripts/lib/anvil.mjs';
+import { compileLockup } from '../scripts/lib/compile-lockup.mjs';
+import { impersonateAccount, startAnvil, stopAnvilFork } from '../scripts/lib/anvil.mjs';
 
 const execFile = promisify(execFileCallback);
 const OWNER = '0xCE08282b294D685E7aeeAf64E81169B25c4AAb18';
@@ -25,19 +23,13 @@ const LOCKUP_READ_ABI = [
 const ERC20_READ_ABI = ['function balanceOf(address account) view returns (uint256)'];
 
 test(
-  'execute-lockups runs end-to-end on an anvil Base fork',
+  'execute-lockups runs end-to-end on an anvil chain',
   { timeout: 180000 },
   async (t) => {
     const repoRoot = path.resolve(new URL('..', import.meta.url).pathname);
-    if (!process.env.BASE_RPC_URL) {
-      t.skip('BASE_RPC_URL is required for the Base fork integration test');
-      return;
-    }
-
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'ility-lockup-'));
     const generatedDir = path.join(tempRoot, 'generated');
     const beneficiariesPath = path.join(tempRoot, 'beneficiaries.json');
-    const forkUrl = process.env.BASE_RPC_URL;
     const port = 18545 + Math.floor(Math.random() * 1000);
 
     await execFile(
@@ -48,8 +40,7 @@ test(
 
     const mergedCsvPath = path.join(generatedDir, 'lockup-merged.csv');
     const plan = buildLockupPlanFromMergedCsv({ mergedCsvPath });
-    const anvil = await startAnvilFork({
-      forkUrl,
+    const anvil = await startAnvil({
       port,
       chainId: 8453,
     });
@@ -59,6 +50,21 @@ test(
 
     const provider = new JsonRpcProvider(anvil.rpcUrl);
     await impersonateAccount(provider, OWNER);
+    const ownerSigner = await provider.getSigner(OWNER);
+    const tokenArtifact = compileLockup({
+      projectRoot: repoRoot,
+      entryFile: 'src/ILITY.sol',
+      contractName: 'ILITY',
+    });
+    const tokenFactory = new ContractFactory(
+      tokenArtifact.abi,
+      tokenArtifact.bytecode,
+      ownerSigner,
+    );
+    const tokenDeployment = await tokenFactory.deploy(OWNER, OWNER);
+    await tokenDeployment.waitForDeployment();
+    const tokenAddress = getAddress(await tokenDeployment.getAddress());
+
     const devAccounts = (await provider.send('eth_accounts', [])).map((account) =>
       getAddress(account),
     );
@@ -112,7 +118,7 @@ test(
         '--impersonate',
         OWNER,
         '--tokenAddress',
-        DEFAULT_TOKEN_ADDRESS,
+        tokenAddress,
         '--initialOwner',
         OWNER,
         '--outputDir',
@@ -138,6 +144,8 @@ test(
         beneficiariesPath,
         '--lockupAddress',
         lockupAddress,
+        '--tokenAddress',
+        tokenAddress,
         '--impersonate',
         OWNER,
         '--outputDir',
@@ -152,12 +160,13 @@ test(
     assert.match(execution.stdout, /Lockup execution complete\./);
 
     const lockup = new Contract(lockupAddress, LOCKUP_READ_ABI, provider);
-    const token = new Contract(DEFAULT_TOKEN_ADDRESS, ERC20_READ_ABI, provider);
+    const token = new Contract(tokenAddress, ERC20_READ_ABI, provider);
     assert.equal(getAddress(await lockup.owner()), getAddress(OWNER));
     assert.equal(
       getAddress(await lockup.token()),
-      getAddress(DEFAULT_TOKEN_ADDRESS),
+      tokenAddress,
     );
+    assert.equal(getAddress(deploymentRecord.tokenAddress), tokenAddress);
     assert.equal(
       getAddress(deploymentRecord.initialOwner),
       getAddress(OWNER),
@@ -241,6 +250,8 @@ test(
         beneficiariesPath,
         '--lockupAddress',
         lockupAddress,
+        '--tokenAddress',
+        tokenAddress,
         '--impersonate',
         OWNER,
         '--outputDir',

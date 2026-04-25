@@ -1,18 +1,36 @@
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { JsonRpcProvider } from 'ethers';
 
-export async function startAnvilFork({
+async function isRpcReady(rpcUrl) {
+  const response = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'eth_blockNumber',
+      params: [],
+    }),
+  });
+
+  if (!response.ok) {
+    return false;
+  }
+
+  const body = await response.json();
+  return typeof body.result === 'string';
+}
+
+export async function startAnvil({
   forkUrl,
   port = 8547,
   chainId,
   timeoutMs = 30000,
 } = {}) {
-  if (!forkUrl) {
-    throw new Error('forkUrl is required to start an Anvil fork');
+  const args = ['--port', String(port), '--silent'];
+  if (forkUrl) {
+    args.push('--fork-url', forkUrl);
   }
-
-  const args = ['--fork-url', forkUrl, '--port', String(port), '--silent'];
   if (chainId) {
     args.push('--chain-id', String(chainId));
   }
@@ -35,29 +53,38 @@ export async function startAnvilFork({
   let lastError;
   while (Date.now() - startedAt < timeoutMs) {
     try {
-      const provider = new JsonRpcProvider(rpcUrl);
-      await provider.getBlockNumber();
-      return {
-        rpcUrl,
-        process: child,
-        getLogs() {
-          return { stdout, stderr };
-        },
-      };
+      if (await isRpcReady(rpcUrl)) {
+        return {
+          rpcUrl,
+          process: child,
+          getLogs() {
+            return { stdout, stderr };
+          },
+        };
+      }
     } catch (error) {
       lastError = error;
-      if (child.exitCode !== null) {
-        throw new Error(
-          `Anvil exited early with code ${child.exitCode}: ${stderr || stdout}`,
-        );
-      }
-
-      await sleep(500);
     }
+
+    if (child.exitCode !== null) {
+      throw new Error(
+        `Anvil exited early with code ${child.exitCode}: ${stderr || stdout}`,
+      );
+    }
+
+    await sleep(500);
   }
 
   child.kill('SIGTERM');
-  throw new Error(`Timed out waiting for Anvil fork: ${lastError}`);
+  throw new Error(`Timed out waiting for Anvil: ${lastError}`);
+}
+
+export async function startAnvilFork(options = {}) {
+  if (!options.forkUrl) {
+    throw new Error('forkUrl is required to start an Anvil fork');
+  }
+
+  return startAnvil(options);
 }
 
 export async function stopAnvilFork(handle) {

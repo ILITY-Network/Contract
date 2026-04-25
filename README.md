@@ -21,7 +21,7 @@
 - `scripts/verify-execution-csv.mjs`: verifies the execution CSV against the validated plan
 - `scripts/deploy-lockup.mjs`: compiles and deploys `src/Lockup_ILY.sol`
 - `scripts/execute-lockups.mjs`: loads the execution CSV, performs on-chain checks, and optionally executes approvals plus `lockBatch`
-- `scripts/lib/anvil.mjs`: starts and stops an Anvil Base fork for integration tests
+- `scripts/lib/anvil.mjs`: starts and stops Anvil chains for integration tests
 - `config/beneficiaries.example.json`: category-to-wallet template
 
 ## Commands
@@ -32,7 +32,7 @@ npm run lockup:plan
 npm run lockup:csv
 npm run lockup:verify
 npm test
-BASE_RPC_URL=https://your-base-rpc.example npm run test:anvil
+npm run test:anvil
 node scripts/deploy-lockup.mjs
 node scripts/execute-lockups.mjs
 node scripts/execute-lockups.mjs --execute --approveIfNeeded
@@ -55,7 +55,7 @@ node scripts/execute-lockups.mjs --execute --approveIfNeeded --transferBaselineA
 5. Verify the final execution CSV with `npm run lockup:verify`.
 6. Run `npm run build`.
 7. Run `npm test`.
-8. Run `BASE_RPC_URL=https://your-base-rpc.example npm run test:anvil` if you want the full Base fork execution test isolated.
+8. Run `npm run test:anvil` if you want the full isolated Anvil deployment and execution test.
 9. If the lockup contract is not deployed yet, deploy it with `node scripts/deploy-lockup.mjs --execute`.
 10. Dry-run on-chain checks with `node scripts/execute-lockups.mjs`.
 11. Execute with `node scripts/execute-lockups.mjs --execute --approveIfNeeded`.
